@@ -1,0 +1,1143 @@
+# Product Requirements Document
+
+## Real-Time Renewable Energy Streaming, Forecasting & Grid Balancing System
+
+**Version:** 1.0  
+**Status:** Development  
+**Primary Technologies:** Python, Apache Kafka 4.3.1, Kafka Streams, PostgreSQL, Machine Learning  
+**Kafka Broker:** `localhost:9092`  
+**Primary Kafka Topic:** `renewable-energy`
+
+---
+
+# 1. Project Overview
+
+## 1.1 Problem Statement
+
+Renewable energy generation from sources such as wind and solar is highly variable. Unlike conventional generation, renewable output can change significantly with weather and time-dependent conditions, making real-time monitoring and short-term forecasting important for maintaining grid stability.
+
+This project develops a streaming-based renewable-energy monitoring and forecasting pipeline that:
+
+1. Replays historical renewable-energy data as a simulated real-time stream.
+2. Publishes incoming records through Apache Kafka.
+3. Processes the stream using Kafka Streams.
+4. Delivers processed records to a subscriber.
+5. Stores streaming data in a PostgreSQL database.
+6. Uses the accumulated and processed data for machine-learning-based short-term forecasting.
+7. Uses forecasts as an input for a future grid-balancing decision layer.
+
+The project therefore combines **stream processing, database integration, and machine learning** into one pipeline.
+
+---
+
+# 2. Objectives
+
+### Primary Objectives
+
+- Build a reliable real-time data streaming pipeline using Apache Kafka.
+- Simulate live renewable-energy measurements from the provided historical dataset.
+- Use Kafka Streams for real-time processing and transformation.
+- Deliver processed data to a Python subscriber.
+- Persist streaming records in PostgreSQL.
+- Prepare a clean historical dataset for ML forecasting.
+- Predict short-term renewable-energy generation.
+- Demonstrate how forecasts can support grid-balancing decisions.
+
+### Secondary Objectives
+
+- Demonstrate producer/consumer architecture.
+- Demonstrate Kafka topics, partitions, offsets, and consumer groups.
+- Demonstrate stream transformation using Kafka Streams.
+- Demonstrate SQL integration with a streaming system.
+- Maintain enough historical data to support later forecasting and analysis.
+
+---
+
+# 3. Scope
+
+## 3.1 In Scope
+
+### Data ingestion
+- Reading the provided renewable-energy dataset.
+- Converting historical records into streaming events.
+- Publishing events to Kafka.
+
+### Streaming
+- Kafka broker running locally.
+- `renewable-energy` input topic.
+- Kafka Streams processing application.
+- Processed output topic.
+
+### Database
+- PostgreSQL integration.
+- Storage of incoming/processed renewable-energy records.
+- SQL queries for historical analysis.
+
+### ML
+- Feature engineering.
+- Short-term renewable-energy forecasting.
+- Evaluation using appropriate regression metrics.
+
+### Grid balancing
+- Calculate renewable generation availability.
+- Compare forecast generation against demand or simulated grid requirement.
+- Generate basic balancing recommendations.
+
+---
+
+# 4. Out of Scope for Initial Version
+
+The initial system will NOT attempt to:
+
+- Control a real electrical grid.
+- Send commands to physical generation equipment.
+- Connect to a real utility SCADA system.
+- Guarantee production-grade fault tolerance.
+- Predict electricity prices.
+- Perform real-time electrical load dispatch.
+- Deploy Kafka across multiple physical machines.
+- Use a cloud Kafka cluster.
+
+The grid-balancing component is a **simulation/decision-support layer**, not an operational control system.
+
+---
+
+# 5. Current System Architecture
+
+```text
+                    HISTORICAL DATASET
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │ Python Producer │
+                  │                 │
+                  │ CSV → JSON      │
+                  └────────┬────────┘
+                           │
+                           ▼
+                 ┌─────────────────────┐
+                 │    Apache Kafka     │
+                 │                     │
+                 │ localhost:9092      │
+                 │                     │
+                 │ renewable-energy    │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                  ┌──────────────────┐
+                  │   Kafka Streams  │
+                  │                  │
+                  │ Validate         │
+                  │ Transform        │
+                  │ Calculate        │
+                  │ Aggregate        │
+                  └────────┬─────────┘
+                           │
+                           ▼
+              ┌──────────────────────────┐
+              │ renewable-energy-        │
+              │ processed                │
+              └───────────┬──────────────┘
+                          │
+                 ┌────────┴─────────┐
+                 │                  │
+                 ▼                  ▼
+        ┌────────────────┐    ┌───────────────┐
+        │ Python         │    │ PostgreSQL    │
+        │ Subscriber     │    │ Database      │
+        │                │    │               │
+        │ CMD Logging    │    │ Historical    │
+        └────────────────┘    │ Storage       │
+                              └───────┬───────┘
+                                      │
+                                      ▼
+                               ML Forecasting
+                                      │
+                                      ▼
+                              Grid Balancing
+```
+
+---
+
+# 6. Component Responsibilities
+
+| Component | Technology | Responsibility |
+|---|---|---|
+| Data source | CSV | Historical renewable-energy data |
+| Producer | Python | Simulate real-time data |
+| Broker | Kafka 4.3.1 | Transport and buffer events |
+| Input topic | Kafka | Store raw streaming events |
+| Stream processor | Kafka Streams / Java | Validate and transform events |
+| Output topic | Kafka | Store processed events |
+| Subscriber | Python | Consume and display processed events |
+| Database | PostgreSQL | Persist streaming data |
+| ML model | Python | Forecast renewable generation |
+| Balancing engine | Python | Simulate balancing decisions |
+
+---
+
+# 7. Kafka Architecture
+
+## 7.1 Broker
+
+The development environment uses:
+
+```text
+localhost:9092
+```
+
+Kafka is running in **KRaft mode**, without ZooKeeper.
+
+---
+
+## 7.2 Input Topic
+
+```text
+renewable-energy
+```
+
+This topic receives raw events from the Python producer.
+
+Example event:
+
+```json
+{
+  "timestamp": "2024-01-01 10:00:00",
+  "wind_production": 120.5,
+  "solar_production": 350.2
+}
+```
+
+The exact fields must be adapted to the actual dataset schema.
+
+---
+
+## 7.3 Processed Topic
+
+```text
+renewable-energy-processed
+```
+
+Kafka Streams publishes transformed records here.
+
+Example:
+
+```json
+{
+  "timestamp": "2024-01-01 10:00:00",
+  "wind_production": 120.5,
+  "solar_production": 350.2,
+  "total_renewable": 470.7
+}
+```
+
+---
+
+# 8. Producer Requirements
+
+The producer shall:
+
+1. Read the dataset sequentially.
+2. Convert each row to JSON.
+3. Publish the JSON event to Kafka.
+4. Preserve the original timestamp.
+5. Wait for a configurable interval between records.
+6. Log successful publication.
+7. Handle Kafka connection failures.
+8. Avoid modifying the original dataset.
+
+### Suggested streaming speed
+
+```text
+DEFAULT_INTERVAL = 1 second
+```
+
+The interval must be configurable rather than hard-coded.
+
+---
+
+## Producer Skeleton
+
+```python
+from kafka import KafkaProducer
+import json
+import time
+
+producer = KafkaProducer(
+    bootstrap_servers="localhost:9092",
+    value_serializer=lambda value:
+        json.dumps(value).encode("utf-8")
+)
+
+TOPIC = "renewable-energy"
+INTERVAL = 1
+
+for _, row in df.iterrows():
+
+    record = {
+        "timestamp": str(row["timestamp"]),
+        "wind_production": float(row["wind_production"]),
+        "solar_production": float(row["solar_production"])
+    }
+
+    producer.send(TOPIC, value=record)
+
+    print(f"[PRODUCER] Sent: {record}")
+
+    time.sleep(INTERVAL)
+
+producer.flush()
+producer.close()
+```
+
+**Important:** column names above are placeholders until the actual dataset schema is finalized.
+
+---
+
+# 9. Kafka Streams Requirements
+
+Kafka Streams is the primary stream-processing layer.
+
+The application shall:
+
+1. Consume from `renewable-energy`.
+2. Validate incoming records.
+3. Remove or route malformed records.
+4. Perform real-time transformations.
+5. Calculate derived renewable-energy features.
+6. Publish valid processed records to `renewable-energy-processed`.
+
+---
+
+## 9.1 Initial Processing
+
+The first stream transformation should calculate:
+
+```text
+total_renewable =
+    wind_production + solar_production
+```
+
+Additional derived values may include:
+
+```text
+wind_percentage
+solar_percentage
+rolling_average
+generation_change
+```
+
+---
+
+## 9.2 Conceptual Kafka Streams Code
+
+```java
+StreamsBuilder builder = new StreamsBuilder();
+
+KStream<String, EnergyRecord> input =
+    builder.stream(
+        "renewable-energy",
+        Consumed.with(
+            Serdes.String(),
+            energySerde
+        )
+    );
+
+KStream<String, EnergyRecord> processed =
+    input
+        .filter((key, value) -> value != null)
+        .mapValues(record -> {
+
+            record.setTotalRenewable(
+                record.getWindProduction()
+                + record.getSolarProduction()
+            );
+
+            return record;
+        });
+
+processed.to(
+    "renewable-energy-processed",
+    Produced.with(
+        Serdes.String(),
+        energySerde
+    )
+);
+```
+
+This is deliberately simple for the first implementation. Complexity should be earned, not added because engineers fear an empty codebase.
+
+---
+
+# 10. Subscriber Requirements
+
+The Python subscriber shall:
+
+- Subscribe to `renewable-energy-processed`.
+- Use a dedicated consumer group.
+- Deserialize JSON.
+- Display received records in CMD/PowerShell.
+- Log timestamp, production values, partition, and offset.
+- Handle graceful shutdown.
+
+Example:
+
+```python
+from kafka import KafkaConsumer
+import json
+
+consumer = KafkaConsumer(
+    "renewable-energy-processed",
+    bootstrap_servers="localhost:9092",
+    group_id="renewable-subscriber",
+    auto_offset_reset="earliest",
+    value_deserializer=lambda x:
+        json.loads(x.decode("utf-8"))
+)
+
+for message in consumer:
+
+    data = message.value
+
+    print(
+        f"[SUBSCRIBER] "
+        f"{data['timestamp']} | "
+        f"Wind={data['wind_production']} | "
+        f"Solar={data['solar_production']} | "
+        f"Total={data['total_renewable']} | "
+        f"Partition={message.partition} | "
+        f"Offset={message.offset}"
+    )
+```
+
+---
+
+# 11. PostgreSQL Integration
+
+The processed stream shall also be persisted in PostgreSQL.
+
+## Database
+
+```text
+Database: renewable_energy
+```
+
+## Table
+
+```sql
+CREATE TABLE energy_readings (
+    id BIGSERIAL PRIMARY KEY,
+
+    timestamp TIMESTAMP NOT NULL,
+
+    wind_production DOUBLE PRECISION,
+
+    solar_production DOUBLE PRECISION,
+
+    total_renewable DOUBLE PRECISION,
+
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+# 12. SQL Integration Strategy
+
+For the initial academic implementation, the Python subscriber will perform the database insertion.
+
+```text
+Kafka
+  ↓
+Kafka Streams
+  ↓
+Processed Topic
+  ↓
+Python Subscriber
+  ├── CMD Logging
+  └── PostgreSQL INSERT
+```
+
+Example:
+
+```python
+import psycopg2
+
+connection = psycopg2.connect(
+    host="localhost",
+    database="renewable_energy",
+    user="postgres",
+    password="YOUR_PASSWORD"
+)
+
+cursor = connection.cursor()
+
+cursor.execute(
+    """
+    INSERT INTO energy_readings
+    (
+        timestamp,
+        wind_production,
+        solar_production,
+        total_renewable
+    )
+    VALUES (%s, %s, %s, %s)
+    """,
+    (
+        data["timestamp"],
+        data["wind_production"],
+        data["solar_production"],
+        data["total_renewable"]
+    )
+)
+
+connection.commit()
+```
+
+### Production improvement
+
+A later version may use **Kafka Connect JDBC Sink**:
+
+```text
+Kafka
+  ↓
+JDBC Sink Connector
+  ↓
+PostgreSQL
+```
+
+This decouples database persistence from the Python subscriber.
+
+For the first academic implementation, however, Python + PostgreSQL makes the data flow much easier to demonstrate and debug.
+
+---
+
+# 13. Data Flow
+
+A single record should follow this path:
+
+```text
+Dataset
+   │
+   ▼
+Python Producer
+   │
+   │ JSON
+   ▼
+Kafka: renewable-energy
+   │
+   ▼
+Kafka Streams
+   │
+   │ validation + transformation
+   ▼
+Kafka: renewable-energy-processed
+   │
+   ├───────────────┐
+   ▼               ▼
+Subscriber      PostgreSQL
+   │
+   ▼
+CMD Output
+```
+
+---
+
+# 14. Machine Learning Layer
+
+The ML layer will be introduced after the streaming pipeline is stable.
+
+## Input Features
+
+Potential features include:
+
+- Hour
+- Day of week
+- Day of year
+- Month
+- Season
+- Historical wind generation
+- Historical solar generation
+- Lagged generation values
+- Rolling averages
+
+Example:
+
+```text
+wind_t-1
+wind_t-2
+wind_t-24
+solar_t-1
+solar_t-2
+solar_t-24
+rolling_wind_3h
+rolling_solar_3h
+hour
+day_of_week
+```
+
+---
+
+# 15. Forecasting Target
+
+The primary forecasting objective is:
+
+```text
+Predict renewable generation at t + 1
+```
+
+Possible targets:
+
+```text
+Next-hour wind generation
+Next-hour solar generation
+Next-hour total renewable generation
+```
+
+The initial implementation should preferably use:
+
+```text
+total renewable generation
+```
+
+as the first forecasting target.
+
+Separate wind and solar models can be added afterward.
+
+---
+
+# 16. Grid Balancing Layer
+
+The final stage converts forecasting into a simulated grid-balancing decision.
+
+For example:
+
+```text
+Forecast renewable generation
+             │
+             ▼
+       Compare with
+       expected demand
+             │
+       ┌─────┴─────┐
+       ▼           ▼
+ Renewable       Renewable
+ surplus         deficit
+       │           │
+       ▼           ▼
+ Storage /       Backup /
+curtailment     conventional
+                generation
+```
+
+Example decision rule:
+
+```python
+net_balance = forecast_generation - expected_demand
+
+if net_balance > threshold:
+    decision = "SURPLUS"
+elif net_balance < -threshold:
+    decision = "DEFICIT"
+else:
+    decision = "BALANCED"
+```
+
+This is a **simulation**, not a command to real grid infrastructure.
+
+---
+
+# 17. Guardrails
+
+## 17.1 Data Guardrails
+
+- Never modify the original dataset.
+- Preserve source timestamps.
+- Validate numeric fields before publishing.
+- Reject or quarantine malformed records.
+- Do not silently replace missing values with zero.
+- Record the reason for rejected records.
+
+---
+
+## 17.2 Kafka Guardrails
+
+### Topic names
+
+Use explicit topic names:
+
+```text
+renewable-energy
+renewable-energy-processed
+```
+
+Do not create dozens of topics unnecessarily.
+
+### Consumer groups
+
+Use meaningful group IDs:
+
+```text
+renewable-subscriber
+```
+
+Do not randomly change the group ID during testing unless replaying historical messages is intentional.
+
+### Message format
+
+Use JSON consistently during development.
+
+Do not mix:
+
+```text
+JSON
+CSV
+Python repr()
+```
+
+inside the same topic.
+
+---
+
+## 17.3 Producer Guardrails
+
+The producer must:
+
+- Use `producer.flush()` before shutdown.
+- Handle `KeyboardInterrupt`.
+- Log Kafka send failures.
+- Avoid publishing records faster than necessary.
+- Use a configurable replay speed.
+- Never publish invalid numerical values such as `NaN` or infinite values.
+
+---
+
+## 17.4 Stream Processing Guardrails
+
+Kafka Streams must:
+
+- Reject null records.
+- Validate required fields.
+- Avoid calculations on missing values.
+- Maintain deterministic transformations.
+- Log processing failures.
+- Keep raw input data untouched.
+
+Raw data:
+
+```text
+renewable-energy
+```
+
+Processed data:
+
+```text
+renewable-energy-processed
+```
+
+Never overwrite raw events with processed events.
+
+---
+
+# 18. SQL Guardrails
+
+### Use parameterized queries
+
+Correct:
+
+```python
+cursor.execute(
+    "INSERT INTO energy_readings "
+    "(timestamp, wind_production) VALUES (%s, %s)",
+    (timestamp, wind)
+)
+```
+
+Never construct SQL using string concatenation:
+
+```python
+# DO NOT DO THIS
+query = f"INSERT INTO energy_readings VALUES ('{timestamp}', {wind})"
+```
+
+### Database credentials
+
+Never hard-code credentials in Git.
+
+Use environment variables:
+
+```python
+import os
+
+password = os.getenv("POSTGRES_PASSWORD")
+```
+
+Use a `.env` file locally if needed, and add it to `.gitignore`.
+
+---
+
+# 19. Error Handling
+
+The system must handle:
+
+### Kafka unavailable
+
+```text
+Producer
+   ↓
+Connection failure
+   ↓
+Retry / log error
+```
+
+### PostgreSQL unavailable
+
+The subscriber should log the database error rather than silently losing the record.
+
+### Invalid record
+
+```text
+Invalid event
+     ↓
+Reject
+     ↓
+Log reason
+```
+
+### Application shutdown
+
+Use graceful shutdown:
+
+```python
+try:
+    ...
+except KeyboardInterrupt:
+    print("Stopping...")
+finally:
+    consumer.close()
+    connection.close()
+```
+
+---
+
+# 20. Logging Standard
+
+Every component should produce structured logs.
+
+### Producer
+
+```text
+[PRODUCER] Sent record
+timestamp=...
+partition=...
+offset=...
+```
+
+### Kafka Streams
+
+```text
+[STREAM] Processed record
+timestamp=...
+total_generation=...
+```
+
+### Subscriber
+
+```text
+[SUBSCRIBER] Received record
+timestamp=...
+```
+
+### Database
+
+```text
+[DATABASE] Inserted record
+timestamp=...
+```
+
+This makes the entire pipeline demonstrable from the command line.
+
+---
+
+# 21. Testing Strategy
+
+## Test 1: Kafka availability
+
+```powershell
+.\bin\windows\kafka-topics.bat `
+    --list `
+    --bootstrap-server localhost:9092
+```
+
+Expected:
+
+```text
+renewable-energy
+```
+
+---
+
+## Test 2: Producer
+
+Send one known test record.
+
+Expected:
+
+```text
+[PRODUCER] Sent record
+```
+
+---
+
+## Test 3: Stream processing
+
+Verify the processed topic receives the record.
+
+```powershell
+.\bin\windows\kafka-console-consumer.bat `
+    --topic renewable-energy-processed `
+    --from-beginning `
+    --bootstrap-server localhost:9092
+```
+
+---
+
+## Test 4: SQL
+
+After receiving a record:
+
+```sql
+SELECT *
+FROM energy_readings
+ORDER BY id DESC
+LIMIT 10;
+```
+
+The record should appear in PostgreSQL.
+
+---
+
+## Test 5: End-to-end
+
+One CSV record must successfully travel through:
+
+```text
+CSV
+ ↓
+Producer
+ ↓
+Kafka
+ ↓
+Kafka Streams
+ ↓
+Processed Kafka topic
+ ↓
+Subscriber
+ ↓
+PostgreSQL
+```
+
+This is the primary MVP acceptance test.
+
+---
+
+# 22. Success Criteria
+
+The MVP is considered successful when:
+
+- Kafka broker runs successfully.
+- `renewable-energy` topic exists.
+- Python producer publishes dataset records.
+- Kafka Streams processes the records.
+- `renewable-energy-processed` receives processed records.
+- Python subscriber receives processed records.
+- Subscriber logs records to CMD/PowerShell.
+- PostgreSQL stores received records.
+- SQL queries can retrieve stored readings.
+- A complete record can be traced from dataset → Kafka → processing → subscriber → SQL.
+
+---
+
+# 23. Development Phases
+
+## Phase 1: Infrastructure
+
+```text
+Kafka 4.3.1
+KRaft
+localhost:9092
+renewable-energy
+```
+
+**Status:** Partially complete.
+
+---
+
+## Phase 2: Python Producer
+
+```text
+CSV → Python → Kafka
+```
+
+**Goal:** Stream historical data at configurable intervals.
+
+---
+
+## Phase 3: Kafka Streams
+
+```text
+Kafka → Kafka Streams → processed topic
+```
+
+**Goal:** Demonstrate real-time stream processing.
+
+---
+
+## Phase 4: Subscriber
+
+```text
+processed topic → Python subscriber
+```
+
+**Goal:** Display processed events and metadata.
+
+---
+
+## Phase 5: PostgreSQL
+
+```text
+processed topic → subscriber → PostgreSQL
+```
+
+**Goal:** Persist streaming data.
+
+---
+
+## Phase 6: ML Forecasting
+
+```text
+Historical SQL data
+       ↓
+Feature engineering
+       ↓
+ML model
+       ↓
+Next-hour forecast
+```
+
+---
+
+## Phase 7: Grid Balancing
+
+```text
+Forecast
+   +
+Expected demand
+   ↓
+Balance calculation
+   ↓
+Surplus / Balanced / Deficit
+```
+
+---
+
+# 24. Final Architecture
+
+The completed system is expected to look like:
+
+```text
+                         ┌────────────────────┐
+                         │ Historical Dataset │
+                         └─────────┬──────────┘
+                                   │
+                                   ▼
+                         ┌────────────────────┐
+                         │  Python Producer   │
+                         │ CSV → JSON         │
+                         └─────────┬──────────┘
+                                   │
+                                   ▼
+                    ┌────────────────────────────┐
+                    │       Apache Kafka         │
+                    │                            │
+                    │    renewable-energy        │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────────┐
+                    │       Kafka Streams        │
+                    │                            │
+                    │ Validation                 │
+                    │ Transformation             │
+                    │ Aggregation                 │
+                    └─────────────┬──────────────┘
+                                  │
+                                  ▼
+                 ┌────────────────────────────────┐
+                 │ renewable-energy-processed     │
+                 └───────────────┬────────────────┘
+                                 │
+                     ┌───────────┴───────────┐
+                     │                       │
+                     ▼                       ▼
+             ┌───────────────┐       ┌──────────────┐
+             │ Python        │       │ PostgreSQL   │
+             │ Subscriber    │       │              │
+             │               │       │ SQL Storage  │
+             └───────┬───────┘       └──────┬───────┘
+                     │                      │
+                     ▼                      ▼
+                CMD Logging          Historical Data
+                                            │
+                                            ▼
+                                    Feature Engineering
+                                            │
+                                            ▼
+                                      ML Forecast
+                                            │
+                                            ▼
+                                    Grid Balancing
+                                            │
+                                            ▼
+                              Surplus / Balanced / Deficit
+```
+
+---
+
+# 25. Key Design Principle
+
+The system deliberately separates **raw streaming data**, **processed streaming data**, **persistent storage**, and **ML decisions**.
+
+```text
+Raw Data
+   ≠
+Processed Data
+   ≠
+Stored Data
+   ≠
+Forecast
+   ≠
+Grid Decision
+```
+
+This separation makes the system easier to debug, evaluate, and explain during project demonstrations.
+
+The initial priority is to make the following path completely reliable:
+
+```text
+CSV
+ ↓
+Python Producer
+ ↓
+Kafka
+ ↓
+Kafka Streams
+ ↓
+Processed Topic
+ ↓
+Python Subscriber
+ ↓
+PostgreSQL
+```
+
+Only after this pipeline is stable should forecasting and grid-balancing logic be added.
