@@ -1,0 +1,7 @@
+# Wokwi Library Dependencies
+PubSubClient
+ArduinoJson
+Adafruit SSD1306
+Adafruit GFX Library
+DHT sensor library
+Adafruit Unified Sensor

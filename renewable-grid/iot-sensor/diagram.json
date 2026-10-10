@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "author": "Renewable Energy Grid Project",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 20,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled",
+      "top": 250,
+      "left": 15,
+      "attrs": { "i2cAddress": "0x3c" }
+    },
+    {
+      "type": "wokwi-photoresistor-sensor",
+      "id": "ldr",
+      "top": -140,
+      "left": -150,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot",
+      "top": -140,
+      "left": 130,
+      "attrs": { "label": "Wind Turbine Speed" }
+    },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht",
+      "top": 60,
+      "left": -180,
+      "attrs": { "temperature": "28.5", "humidity": "45" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led",
+      "top": 70,
+      "left": 180,
+      "attrs": { "color": "limegreen", "label": "MQTT TX" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 120,
+      "left": 170,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serial:RX", "", [] ],
+    [ "esp:RX", "$serial:TX", "", [] ],
+
+    [ "esp:3V3", "ldr:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "ldr:GND", "black", [ "v0" ] ],
+    [ "esp:34", "ldr:AO", "gold", [ "v-30", "h-40" ] ],
+
+    [ "esp:3V3", "pot:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "pot:GND", "black", [ "v0" ] ],
+    [ "esp:35", "pot:SIG", "cyan", [ "v-30", "h40" ] ],
+
+    [ "esp:3V3", "dht:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "dht:GND", "black", [ "v0" ] ],
+    [ "esp:4", "dht:SDA", "orange", [ "h-20" ] ],
+
+    [ "esp:3V3", "oled:VCC", "red", [ "v20" ] ],
+    [ "esp:GND.2", "oled:GND", "black", [ "v20" ] ],
+    [ "esp:21", "oled:SDA", "green", [ "v40" ] ],
+    [ "esp:22", "oled:SCL", "blue", [ "v40" ] ],
+
+    [ "esp:2", "led:A", "limegreen", [ "h20" ] ],
+    [ "led:C", "r1:1", "black", [ "v10" ] ],
+    [ "r1:2", "esp:GND.2", "black", [ "h-40" ] ]
+  ],
+  "dependencies": {}
+}
