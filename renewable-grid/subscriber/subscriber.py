@@ -140,14 +140,18 @@ def main():
             solar = data.get("solar_production", 0.0)
             total = data.get("total_renewable", data.get("production", 0.0))
 
-            # CMD logging matching PRD Section 10 standard
+            forecast = data.get("forecast_t1_mw", data.get("forecast", "N/A"))
+            status = data.get("grid_decision", data.get("status", "BALANCED"))
+            freq = data.get("grid_frequency_hz", 50.0)
+
+            # CMD logging matching PRD Section 10 standard + ML forecast
             print(
-                f"[SUBSCRIBER] "
+                f"[SUBSCRIBER-ML] "
                 f"{timestamp} | "
                 f"Source={source} | "
-                f"Wind={wind} MW | "
-                f"Solar={solar} MW | "
                 f"Total={total} MW | "
+                f"Forecast(t+1)={forecast} MW | "
+                f"Grid={status} ({freq} Hz) | "
                 f"Partition={message.partition} | "
                 f"Offset={message.offset}"
             )

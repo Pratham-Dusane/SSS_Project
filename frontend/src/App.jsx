@@ -75,15 +75,72 @@ export default function App() {
     setRecords(prev => [...prev.slice(-30), newRecord]);
   };
 
-  // Streaming ticker
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+  // Connect to live FastAPI & Kafka Backend via WebSocket
   useEffect(() => {
-    if (!isStreaming) return;
+    let ws = null;
+    let reconnectTimeout = null;
+
+    const connectWebSocket = () => {
+      try {
+        ws = new WebSocket('ws://localhost:8000/ws/telemetry');
+
+        ws.onopen = () => {
+          console.log('[WebSocket] Connected to live backend at ws://localhost:8000/ws/telemetry');
+          setIsLiveConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'INIT_HISTORY' && Array.isArray(data.records)) {
+              if (data.records.length > 0) setRecords(data.records);
+              if (data.grid_state?.demand) setDemand(data.grid_state.demand);
+              if (data.grid_state?.battery_soc) setBatterySoc(data.grid_state.battery_soc);
+            } else if (data.timestamp && data.total !== undefined) {
+              setRecords(prev => [...prev.slice(-30), data]);
+              if (data.status === 'SURPLUS') {
+                setBatterySoc(prev => Math.min(100, Math.round((prev + 0.3) * 10) / 10));
+              } else if (data.status === 'DEFICIT') {
+                setBatterySoc(prev => Math.max(10, Math.round((prev - 0.3) * 10) / 10));
+              }
+            }
+          } catch (err) {
+            console.error('[WebSocket] Error parsing telemetry payload:', err);
+          }
+        };
+
+        ws.onerror = () => {
+          setIsLiveConnected(false);
+        };
+
+        ws.onclose = () => {
+          setIsLiveConnected(false);
+          reconnectTimeout = setTimeout(connectWebSocket, 4000);
+        };
+      } catch (err) {
+        setIsLiveConnected(false);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (ws) ws.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
+  // Streaming ticker (active as fallback simulator when live backend WebSocket is not connected)
+  useEffect(() => {
+    if (!isStreaming || isLiveConnected) return;
     const intervalTime = Math.max(600, Math.round(2500 / speed));
     const timer = setInterval(() => {
       generateNewRecord();
     }, intervalTime);
     return () => clearInterval(timer);
-  }, [isStreaming, speed, demand, nextOffset]);
+  }, [isStreaming, speed, demand, nextOffset, isLiveConnected]);
 
   const latestRecord = records[records.length - 1] || initialEnergyRecords[0];
 
@@ -106,6 +163,7 @@ export default function App() {
           speed={speed}
           setSpeed={setSpeed}
           onSimulateTick={generateNewRecord}
+          isLiveConnected={isLiveConnected}
         />
 
         <main className="content-body">

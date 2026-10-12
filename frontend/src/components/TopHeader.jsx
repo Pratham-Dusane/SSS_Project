@@ -7,7 +7,8 @@ export default function TopHeader({
   setIsStreaming, 
   speed, 
   setSpeed, 
-  onSimulateTick 
+  onSimulateTick,
+  isLiveConnected = false
 }) {
   const [timeStr, setTimeStr] = useState('');
 
@@ -41,6 +42,17 @@ export default function TopHeader({
       </div>
 
       <div className="header-controls">
+        {/* Backend WebSocket Connection Status */}
+        {isLiveConnected ? (
+          <span className="status-pill online" style={{ fontSize: '0.75rem', padding: '5px 10px' }} title="Connected to live FastAPI & Kafka WebSocket feed">
+            <span className="pulse-dot"></span> LIVE BACKEND (WS)
+          </span>
+        ) : (
+          <span className="status-pill offline" style={{ fontSize: '0.75rem', padding: '5px 10px' }} title="Backend offline - running local realistic simulator">
+            LOCAL DEMO
+          </span>
+        )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
           <Clock size={14} color="var(--accent-cyan)" />
           <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-main)' }}>{timeStr}</span>

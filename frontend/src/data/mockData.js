@@ -77,22 +77,26 @@ export const pipelineNodes = [
 ];
 
 export const mlModelMeta = {
-  modelType: "Gradient Boosted Regressor (XGBoost / LightGBM) + LSTM",
+  modelType: "LightGBM Regressor (Champion Model)",
   target: "Total Generation (t+1 hour ahead)",
-  r2Score: "0.942",
-  mae: "142.8 kW",
-  rmse: "198.5 kW",
-  trainingDatasetRows: 51865,
-  gpuEnvironment: "Kaggle T4 x2 GPU Accelerator",
+  r2Score: "0.979",
+  mae: "342.2 MW",
+  rmse: "634.6 MW",
+  trainingDatasetRows: 36270,
+  testDatasetRows: 10363,
+  gpuEnvironment: "Trained on Time-Series Chronological Split",
   features: [
-    "wind_t-1 (lagged generation)",
-    "wind_t-2 (lagged generation)",
-    "solar_t-1 (lagged generation)",
-    "rolling_wind_3h",
-    "rolling_solar_3h",
-    "start_hour (sin/cos encoded)",
-    "day_of_year",
-    "month_name",
-    "season_code"
+    "Production (current generation)",
+    "ramp_1h (kinematic velocity)",
+    "accel_1h (kinematic acceleration)",
+    "ramp_3h (sustained velocity)",
+    "diurnal_diff (y_t - y_t-24)",
+    "roll_std_3h, roll_std_6h, roll_std_24h",
+    "volatility_ratio_3_24 & z_score_24h",
+    "ewma_3h & ewma_12h",
+    "solar_elevation_proxy & dist_from_solar_noon",
+    "is_daylight, is_solar_ramp_up, is_solar_ramp_down",
+    "lag_1h, lag_2h, lag_3h, lag_24h, lag_48h",
+    "hour_sin/cos & month_sin/cos"
   ]
 };
