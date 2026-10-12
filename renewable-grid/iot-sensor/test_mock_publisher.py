@@ -20,7 +20,10 @@ BROKER = "broker.hivemq.com"
 PORT = 1883
 TOPIC = "renewable-grid/iot/sensors"
 
-client = mqtt.Client(client_id=f"mock-wokwi-{random.randint(1000, 9999)}")
+try:
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"mock-wokwi-{random.randint(1000, 9999)}")
+except AttributeError:
+    client = mqtt.Client(client_id=f"mock-wokwi-{random.randint(1000, 9999)}")
 print(f"Connecting to MQTT broker: {BROKER}:{PORT}...")
 client.connect(BROKER, PORT, 60)
 client.loop_start()

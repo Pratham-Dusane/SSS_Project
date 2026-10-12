@@ -127,9 +127,11 @@ def init_kafka(broker):
         logger.warning("[KAFKA] Broker at %s unavailable (%s). Running in MQTT-only monitor mode.", broker, e)
         return None
 
-def on_connect(client, userdata, flags, rc):
-    """Callback when connected to MQTT broker."""
-    if rc == 0:
+def on_connect(client, userdata, flags, rc, *args, **kwargs):
+    """Callback when connected to MQTT broker (supports paho-mqtt v1 and v2)."""
+    # In paho-mqtt v2, rc is a ReasonCodes object with is_failure
+    is_success = (rc == 0) if isinstance(rc, int) else (not getattr(rc, "is_failure", False))
+    if is_success:
         logger.info("[MQTT] Connected to broker: %s:%d", userdata["broker"], userdata["port"])
         client.subscribe(userdata["topic"])
         logger.info("[MQTT] Subscribed to topic: '%s'", userdata["topic"])
@@ -137,7 +139,7 @@ def on_connect(client, userdata, flags, rc):
         print("  GATEWAY ACTIVE: Waiting for Wokwi ESP32 telemetry...")
         print("=" * 65 + "\n")
     else:
-        logger.error("[MQTT] Connection failed with error code: %d", rc)
+        logger.error("[MQTT] Connection failed with error: %s", rc)
 
 def on_message(client, userdata, msg):
     """Callback when an MQTT message arrives from Wokwi."""
@@ -237,7 +239,7 @@ def main():
     client_id = f"gateway-{int(time.time())}"
     # Support both paho-mqtt v1 and v2
     try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id, userdata=userdata)
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id, userdata=userdata)
     except AttributeError:
         client = mqtt.Client(client_id=client_id, userdata=userdata)
 
