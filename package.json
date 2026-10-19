@@ -7,9 +7,10 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",
-    "backend": "python3 backend/server.py",
-    "processor": "python3 renewable-grid/streams/stream_processor.py",
-    "subscriber": "python3 renewable-grid/subscriber/subscriber.py",
-    "iot-bridge": "python3 renewable-grid/iot-bridge/iot_bridge.py"
+    "backend": "py -3.13 backend/server.py",
+    "processor": "py -3.13 renewable-grid/streams/stream_processor.py",
+    "subscriber": "py -3.13 renewable-grid/subscriber/subscriber.py",
+    "iot-bridge": "py -3.13 renewable-grid/iot-bridge/iot_bridge.py",
+    "mock-sensor": "py -3.13 renewable-grid/iot-sensor/test_mock_publisher.py"
   }
 }

@@ -41,17 +41,18 @@ This document provides a concise, step-by-step guide to run the entire **Renewab
 ## ⚡ Quickstart: Running the System in 3 Terminals
 
 ### Terminal 1 — Start the Backend (FastAPI + WebSocket)
-```bash
-python3 backend/server.py
+```powershell
+npm run backend
+# or: py -3.13 backend/server.py
 ```
 * **URL:** `http://localhost:8000`
 * **WebSocket:** `ws://localhost:8000/ws/telemetry`
-* *Auto-Fallback:* If Kafka is not running, the backend automatically replays stream data through the **real LightGBM champion model** so you can demo the full UI instantly!
+* *Auto-Fallback & Direct Wokwi Bridge:* If Kafka is not running, the backend automatically connects directly to HiveMQ MQTT (`renewable-grid/iot/sensors`) and passes live Wokwi ESP32 telemetry through the **real LightGBM champion model**, and replays stream records when sensors are idle so you can demo the full UI instantly!
 
 ---
 
 ### Terminal 2 — Start the React Dashboard
-```bash
+```powershell
 npm run dev
 ```
 * Open your browser at **`http://localhost:5173`**.
@@ -61,25 +62,28 @@ npm run dev
 
 ### Terminal 3 — Edge IoT Ingestion & Stream Processing
 
-#### Option A: With Local Kafka Running
+#### Mode 1: Instant Wokwi to Dashboard (No Kafka Download Needed)
+1. Open [Wokwi ESP32 Simulator](https://wokwi.com/projects/new/esp32) in your browser and click Play (see Section 🕹️ below).
+2. Adjust the Photoresistor (Solar) or Potentiometer (Wind).
+3. The React dashboard at `http://localhost:5173` responds immediately with live AI predictions and grid frequency!
+*(Optional: Run the mock sensor in terminal instead of browser: `npm run mock-sensor` or `py -3.13 renewable-grid/iot-sensor/test_mock_publisher.py`)*
+
+#### Mode 2: Full Enterprise Pipeline (With Local Kafka Running)
 1. **Start the Stream Processor with Online ML:**
-   ```bash
-   python3 renewable-grid/streams/stream_processor.py
+   ```powershell
+   npm run processor
+   # or: py -3.13 "renewable-grid\streams\stream_processor.py"
    ```
 2. **Start the IoT Ingestion Gateway (MQTT $\to$ Kafka):**
-   ```bash
-   python3 renewable-grid/iot-bridge/iot_bridge.py
+   ```powershell
+   npm run iot-bridge
+   # or: py -3.13 "renewable-grid\iot-bridge\iot_bridge.py"
    ```
-3. **Start the Wokwi Edge Simulator** (see section below) or the mock publisher:
-   ```bash
-   python3 renewable-grid/iot-sensor/test_mock_publisher.py
+3. **Start the PostgreSQL Subscriber (Optional persistence):**
+   ```powershell
+   npm run subscriber
+   # or: py -3.13 "renewable-grid\subscriber\subscriber.py"
    ```
-
-#### Option B: Standalone IoT Testing (No Kafka Needed)
-Verify Wokwi sensor data over MQTT without starting Kafka:
-```bash
-python3 renewable-grid/iot-bridge/iot_bridge.py --no-kafka
-```
 
 ---
 
@@ -119,9 +123,9 @@ Go to [https://wokwi.com/projects/new/esp32](https://wokwi.com/projects/new/esp3
 | Action | Command |
 |---|---|
 | **Start UI Dashboard** | `npm run dev` |
-| **Start Backend API + WebSocket** | `npm run backend` *(or `python3 backend/server.py`)* |
-| **Start Stream Processor (ML + Grid Rules)** | `npm run processor` *(or `python3 renewable-grid/streams/stream_processor.py`)* |
-| **Start IoT Gateway Bridge** | `npm run iot-bridge` *(or `python3 renewable-grid/iot-bridge/iot_bridge.py`)* |
-| **Start SQL Ingestion Subscriber** | `npm run subscriber` *(or `python3 renewable-grid/subscriber/subscriber.py`)* |
-| **Terminal Mock Sensor (No Browser)** | `python3 renewable-grid/iot-sensor/test_mock_publisher.py` |
+| **Start Backend API + WebSocket** | `npm run backend` *(or `py -3.13 backend/server.py`)* |
+| **Start Stream Processor (ML + Grid Rules)** | `npm run processor` *(or `py -3.13 renewable-grid/streams/stream_processor.py`)* |
+| **Start IoT Gateway Bridge** | `npm run iot-bridge` *(or `py -3.13 renewable-grid/iot-bridge/iot_bridge.py`)* |
+| **Start SQL Ingestion Subscriber** | `npm run subscriber` *(or `py -3.13 renewable-grid/subscriber/subscriber.py`)* |
+| **Terminal Mock Sensor (No Browser)** | `npm run mock-sensor` *(or `py -3.13 renewable-grid/iot-sensor/test_mock_publisher.py`)* |
 | **Build Frontend for Production** | `npm run build` |

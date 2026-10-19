@@ -192,46 +192,151 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             connected_clients.remove(websocket)
         logger.info("UI Client disconnected. Remaining clients: %d", len(connected_clients))
 
-# --- Kafka Stream Consumer Thread ---
+# --- Kafka & MQTT Ingestion Workers ---
+
+import socket
+
+def is_socket_open(host: str, port: int, timeout: float = 0.8) -> bool:
+    """Quickly check if a TCP port is open to avoid 40-second Kafka bootstrap blocking."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+# Timestamp of last received Wokwi MQTT telemetry packet
+last_mqtt_packet_time = 0.0
 
 def kafka_listener_worker(loop):
     broker = os.getenv("KAFKA_BROKER", "localhost:9092")
     topic = os.getenv("KAFKA_OUTPUT_TOPIC", "renewable-energy-processed")
     group = "backend-dashboard-consumer"
 
-    try:
-        from kafka import KafkaConsumer
-        logger.info("Attempting connection to Kafka broker: %s topic: %s", broker, topic)
-        consumer = KafkaConsumer(
-            topic,
-            bootstrap_servers=broker,
-            group_id=group,
-            auto_offset_reset="latest",
-            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            consumer_timeout_ms=3000
-        )
-        grid_state["kafka_connected"] = True
-        logger.info("Backend successfully connected to Kafka stream topic '%s'", topic)
+    host = broker.split(":")[0]
+    port = int(broker.split(":")[1]) if ":" in broker else 9092
 
-        while True:
-            for message in consumer:
-                record = message.value
-                # Ensure record has partition and offset
-                record["partition"] = message.partition
-                record["offset"] = message.offset
-                asyncio.run_coroutine_threadsafe(broadcast_record(record), loop)
-            time.sleep(0.1)
+    if is_socket_open(host, port):
+        try:
+            from kafka import KafkaConsumer
+            logger.info("Connecting to Kafka broker: %s topic: %s", broker, topic)
+            consumer = KafkaConsumer(
+                topic,
+                bootstrap_servers=broker,
+                group_id=group,
+                auto_offset_reset="latest",
+                value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+                consumer_timeout_ms=3000
+            )
+            grid_state["kafka_connected"] = True
+            logger.info("Backend successfully connected to Kafka stream topic '%s'", topic)
 
-    except Exception as e:
-        logger.info("Kafka consumer thread running in demo replay mode (Kafka broker offline: %s)", e)
+            while True:
+                for message in consumer:
+                    record = message.value
+                    record["partition"] = message.partition
+                    record["offset"] = message.offset
+                    asyncio.run_coroutine_threadsafe(broadcast_record(record), loop)
+                time.sleep(0.1)
+        except Exception as e:
+            logger.info("Kafka consumer encountered an error (%s). Switching to hybrid MQTT/demo replay mode.", e)
+            grid_state["kafka_connected"] = False
+    else:
+        logger.info("Kafka broker at %s:%d offline. Starting hybrid Wokwi MQTT + ML Forecaster mode.", host, port)
         grid_state["kafka_connected"] = False
-        run_standalone_stream_simulator(loop)
+
+    run_standalone_stream_simulator(loop)
+
+def on_wokwi_mqtt_message(client, userdata, msg):
+    """Processes incoming Wokwi ESP32 telemetry in real-time when Kafka is offline."""
+    global last_mqtt_packet_time
+    loop = userdata.get("loop")
+    if not loop:
+        return
+
+    try:
+        raw_text = msg.payload.decode("utf-8")
+        payload = json.loads(raw_text)
+    except Exception:
+        return
+
+    solar = float(payload.get("solar_production", 0.0))
+    wind = float(payload.get("wind_production", 0.0))
+    total_prod = float(payload.get("production", solar + wind))
+    ts = payload.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Run Online ML Forecaster & Grid Balancing
+    if forecaster:
+        pred_res = forecaster.predict_stream(
+            current_prod=total_prod,
+            timestamp_str=ts,
+            demand=grid_state["demand"],
+            threshold=grid_state["threshold"]
+        )
+        forecast_val = pred_res["forecast_t1_mw"]
+        status = pred_res["decision"]
+        freq = pred_res["frequency_hz"]
+        action = pred_res["action"]
+    else:
+        forecast_val = round(total_prod * 0.98, 1)
+        status = "BALANCED"
+        freq = 50.0
+        action = "Synchronized"
+
+    record = {
+        "id": int(time.time() * 1000) % 1000000,
+        "timestamp": ts,
+        "hour": datetime.now().hour,
+        "source": payload.get("source", "Wokwi-ESP32"),
+        "device_id": payload.get("device_id", "esp32-renewable-station-01"),
+        "wind": round(wind, 1),
+        "solar": round(solar, 1),
+        "total": round(total_prod, 1),
+        "production": round(total_prod, 1),
+        "temperature": payload.get("temperature", 25.0),
+        "humidity": payload.get("humidity", 50.0),
+        "forecast": forecast_val,
+        "forecast_t1_mw": forecast_val,
+        "demand": grid_state["demand"],
+        "net_balance_mw": round(forecast_val - grid_state["demand"], 1),
+        "status": status,
+        "grid_decision": status,
+        "grid_action": action,
+        "frequency_hz": freq,
+        "partition": 0,
+        "offset": grid_state["total_records_processed"] + 1
+    }
+
+    last_mqtt_packet_time = time.time()
+    asyncio.run_coroutine_threadsafe(broadcast_record(record), loop)
 
 def run_standalone_stream_simulator(loop):
     """
-    If Kafka is not running locally, replays prototype records through the
-    real ML model so the end-to-end pipeline is fully functional and visible!
+    Connects to Wokwi MQTT broker and replays prototype dataset whenever
+    Wokwi sensors are idle, ensuring real-time interactivity.
     """
+    global last_mqtt_packet_time
+
+    # Initialize Wokwi MQTT subscriber in background
+    try:
+        import paho.mqtt.client as mqtt
+        mqtt_topic = "renewable-grid/iot/sensors"
+        mqtt_broker = "broker.hivemq.com"
+        client_id = f"backend-wokwi-sub-{int(time.time())}"
+        
+        try:
+            mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id, userdata={"loop": loop})
+        except AttributeError:
+            mqtt_client = mqtt.Client(client_id=client_id, userdata={"loop": loop})
+        
+        mqtt_client.user_data_set({"loop": loop})
+        mqtt_client.on_message = on_wokwi_mqtt_message
+        mqtt_client.connect(mqtt_broker, 1883, 60)
+        mqtt_client.subscribe(mqtt_topic)
+        mqtt_client.loop_start()
+        logger.info("Direct Wokwi MQTT listener active on '%s' (%s:1883)", mqtt_topic, mqtt_broker)
+    except Exception as me:
+        logger.warning("Could not start direct Wokwi MQTT listener: %s", me)
+
     proto_csv = os.path.join(PROJECT_ROOT, "renewable-grid", "data", "stream_prototype_data.csv")
     if not os.path.exists(proto_csv):
         return
@@ -243,9 +348,14 @@ def run_standalone_stream_simulator(loop):
         logger.error("Could not load prototype dataset: %s", e)
         return
 
-    logger.info("Starting real-time ML stream simulation from prototype dataset (%d records)...", len(df))
+    logger.info("Ready for live Wokwi ESP32 packets. Replaying baseline stream (%d records) when idle...", len(df))
     idx = 0
     while True:
+        # If live Wokwi packets arrived in the last 4 seconds, pause dataset replay
+        if time.time() - last_mqtt_packet_time < 4.0:
+            time.sleep(1.0)
+            continue
+
         row = df.iloc[idx % len(df)]
         idx += 1
 
